@@ -938,6 +938,26 @@ local function percent_slider(id, key, default, fmt, w, on_change, on_release)
   end
 end
 
+-- A pill-shaped toggle in the sliders' style, told apart from them by its
+-- white outline. Filled with the accent when on.
+local function toggle_button(id, label, on, w, disabled)
+  local x, y = ImGui.GetCursorScreenPos(ctx)
+  local h = ImGui.GetFrameHeight(ctx)
+  local dl = ImGui.GetWindowDrawList(ctx)
+  ImGui.BeginDisabled(ctx, disabled)
+  local clicked = ImGui.InvisibleButton(ctx, id, w, h)
+  ImGui.EndDisabled(ctx)
+  local hovered = not disabled and ImGui.IsItemHovered(ctx)
+  local fill = on and (hovered and UI.accent_hover or UI.accent) or (hovered and UI.frame or UI.track)
+  local outline = disabled and UI.faint or UI.text
+  ImGui.DrawList_AddRectFilled(dl, x, y, x + w, y + h, fill, 8)
+  ImGui.DrawList_AddRect(dl, x + 0.5, y + 0.5, x + w - 0.5, y + h - 0.5, outline, 8, 0, 1.5)
+  local tw, th = ImGui.CalcTextSize(ctx, label)
+  local color = disabled and UI.faint or (on and UI.on_accent or UI.text)
+  ImGui.DrawList_AddText(dl, x + math.floor((w - tw) / 2), y + math.floor((h - th) / 2), color, label)
+  return clicked
+end
+
 local function draw_project(width, height, now)
   ImGui.PushStyleColor(ctx, ImGui.Col_ChildBg, 0)
   local open = ImGui.BeginChild(ctx, "project", width, height, ImGui.ChildFlags_None, ImGui.WindowFlags_NoScrollbar | ImGui.WindowFlags_NoScrollWithMouse)
@@ -948,8 +968,8 @@ local function draw_project(width, height, now)
   local image = is_image(path)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 13, 5)
   local ROW_H = ImGui.GetFrameHeight(ctx)   -- checkbox and slider height
-  -- An image has no timeline or loop row, so the preview takes their space.
-  local below = image and (8 + ROW_H) or (8 + TL_H + 8 + ROW_H + 8 + ROW_H)
+  -- An image has no timeline, so the preview takes its space.
+  local below = image and (8 + ROW_H) or (8 + TL_H + 8 + ROW_H)
 
   local pv_h = math.min(math.floor(inner_w * 9 / 16), inner_h - below)
   local pv_w = math.min(inner_w, math.floor(pv_h * 16 / 9))
@@ -1000,19 +1020,15 @@ local function draw_project(width, height, now)
     else
       ImGui.Dummy(ctx, pv_w, TL_H)
     end
-
-    local check_w = ROW_H + 8 + ImGui.CalcTextSize(ctx, "Loop")
-    ImGui.SetCursorScreenPos(ctx, x + math.floor((pv_w - check_w) / 2), y + pv_h + 8 + TL_H + 8)
-    ImGui.BeginDisabled(ctx, not path)
-    local rv, v = ImGui.Checkbox(ctx, "Loop", loop)
-    if rv then proj_set("loop", v and "1" or "") end
-    ImGui.EndDisabled(ctx)
   end
 
+  -- One row: the three sliders and, for a video, the Loop toggle.
   -- Opacity is a layer property, so it follows the drag live. Shading and grid
   -- rebuild the key table and repaint the arrange, so they apply on release.
-  local third = math.floor((pv_w - 16) / 3)
-  local gap = (pv_w - 3 * third) / 2
+  local loop_w = image and 0 or (ImGui.CalcTextSize(ctx, "Loop") + 28)
+  local gaps = image and 2 or 3
+  local third = math.floor((pv_w - loop_w - gaps * 8) / 3)
+  local gap = (pv_w - 3 * third - loop_w) / gaps
   local function rekey() if enabled then register_keys() end end
   ImGui.SetCursorScreenPos(ctx, x, y + pv_h + below - ROW_H)
   percent_slider("##opacity", "opacity", 0.6, "background %.0f%%", third, function(v) reaper.AUBG_SetOpacity(v) end)
@@ -1023,6 +1039,11 @@ local function draw_project(width, height, now)
   ImGui.SameLine(ctx, 0, gap)
   percent_slider("##grid", "grid", 0.5, "grid %.0f%%", third, nil, rekey)
   if ImGui.IsItemHovered(ctx) then tip("Grid line opacity over the video") end
+  if not image then
+    ImGui.SameLine(ctx, 0, gap)
+    if toggle_button("##loop", "Loop", loop, loop_w, not path) then proj_set("loop", loop and "" or "1") end
+    if ImGui.IsItemHovered(ctx) then tip("Loop the video within its in/out range") end
+  end
   ImGui.PopStyleVar(ctx)
   ImGui.EndChild(ctx)
 end
