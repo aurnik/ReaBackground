@@ -2,6 +2,8 @@
 
 A muted video (synced to REAPER's play and edit cursor) or a still image behind the arrange view, on macOS.
 
+![ReaBackground: importing a video and playing with it behind the arrange](docs/reabackground.gif)
+
 Items, the grid, cursors and markers stay on top. The time selection, mute shading and grid lines are drawn as shading over the video instead of hiding it, and the background opacity, shading and grid strength are adjustable.
 
 ## Requirements
