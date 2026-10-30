@@ -519,9 +519,10 @@ end
 
 -- Draws an image letterboxed into a rounded rect (placeholder when nil) and
 -- returns the rect the image occupies.
+-- Letterboxes img into the box at its own aspect and returns the rect it
+-- covers; with no image, paints the box as a placeholder instead.
 local function image_fit(dl, img, x0, y0, x1, y1, rounding)
-  ImGui.DrawList_AddRectFilled(dl, x0, y0, x1, y1, UI.frame, rounding)
-  if not img then return end
+  if not img then ImGui.DrawList_AddRectFilled(dl, x0, y0, x1, y1, UI.frame, rounding) return end
   local iw, ih = ImGui.Image_GetSize(img)
   local w, h = x1 - x0, y1 - y0
   local s = math.min(w / iw, h / ih)
@@ -790,17 +791,20 @@ local function draw_grid(width, default, proj_video, status)
     ensure_thumb(v)
     local x, y, x1, y1 = cell(i)
     ImGui.PushID(ctx, v.name)
-    image_fit(dl, v.img, x, y, x1, y1, 8)
+    -- The tile is the thumbnail at the video's own aspect, centred in the cell;
+    -- the duration label stays on the cell's baseline so rows line up.
+    local tx, ty, tx1, ty1 = image_fit(dl, v.img, x, y, x1, y1, 8)
+    if not tx then tx, ty, tx1, ty1 = x, y, x1, y1 end
 
     -- The thumbnail itself picks (or unpicks) the background for this project.
     local is_default, is_proj = v.name == default, v.name == proj_video
     local in_use = is_proj or (proj_video == "" and is_default)
-    ImGui.SetCursorScreenPos(ctx, x, y)
+    ImGui.SetCursorScreenPos(ctx, tx, ty)
     ImGui.SetNextItemAllowOverlap(ctx)   -- else the icon buttons drawn over it never get the click
-    if ImGui.InvisibleButton(ctx, "##pick", cw, img_h) then proj_set("video", is_proj and "" or v.name) end
+    if ImGui.InvisibleButton(ctx, "##pick", tx1 - tx, ty1 - ty) then proj_set("video", is_proj and "" or v.name) end
     local hover = ImGui.IsMouseHoveringRect(ctx, x, y, x1, y1 + under) and not ImGui.IsPopupOpen(ctx, "", ImGui.PopupFlags_AnyPopupId)
     if in_use or hover then
-      ImGui.DrawList_AddRect(dl, x - 3, y - 3, x1 + 3, y1 + 3, in_use and UI.accent or (UI.accent & 0xFFFFFF00 | 0x80), 10, 0, 2)
+      ImGui.DrawList_AddRect(dl, tx - 3, ty - 3, tx1 + 3, ty1 + 3, in_use and UI.accent or (UI.accent & 0xFFFFFF00 | 0x80), 10, 0, 2)
     end
     if ImGui.IsItemHovered(ctx) then
       tip(is_proj and "Used in this project (click to clear)" or in_use and "Used here as the global default (click to pin to this project)" or "Use in this project")
@@ -812,14 +816,14 @@ local function draw_grid(width, default, proj_video, status)
     ImGui.PopFont(ctx)
     ImGui.DrawList_AddTextEx(dl, font_s, 12, x + (cw - dw) / 2, y1 + (under - 12) / 2 + 1, UI.muted, dur)
     if hover then
-      ImGui.SetCursorScreenPos(ctx, x + 6, y1 - 6 - ICON)
+      ImGui.SetCursorScreenPos(ctx, tx + 6, ty1 - 6 - ICON)
       if icon_button("##default", "globe", UI.accent, is_default, is_default and "Global default (click to clear)" or "Use everywhere (global default)") then
         set_setting("default_video", is_default and "" or v.name)
       end
-      ImGui.SetCursorScreenPos(ctx, x1 - 6 - ICON, y1 - 6 - ICON)
+      ImGui.SetCursorScreenPos(ctx, tx1 - 6 - ICON, ty1 - 6 - ICON)
       if icon_button("##delete", "trash", UI.danger, false, "Delete from library") then delete_target = v.name end
     elseif is_default then
-      draw_icon(dl, "globe", UI.accent, x + 6 + ICON / 2, y1 - 6 - ICON / 2, true, false)
+      draw_icon(dl, "globe", UI.accent, tx + 6 + ICON / 2, ty1 - 6 - ICON / 2, true, false)
     end
     ImGui.PopID(ctx)
   end
@@ -938,8 +942,10 @@ local function percent_slider(id, key, default, fmt, w, on_change, on_release)
   end
 end
 
--- A pill-shaped toggle in the sliders' style, told apart from them by its
--- white outline. Filled with the accent when on.
+-- A pill-shaped toggle in the sliders' style. Like the library tiles it wears
+-- a white ring with a gap around it when on or hovered, which marks
+-- it as clickable. The ring overhangs the item rect by RING.
+local RING = 5
 local function toggle_button(id, label, on, w, disabled)
   local x, y = ImGui.GetCursorScreenPos(ctx)
   local h = ImGui.GetFrameHeight(ctx)
@@ -949,9 +955,10 @@ local function toggle_button(id, label, on, w, disabled)
   ImGui.EndDisabled(ctx)
   local hovered = not disabled and ImGui.IsItemHovered(ctx)
   local fill = on and (hovered and UI.accent_hover or UI.accent) or (hovered and UI.frame or UI.track)
-  local outline = disabled and UI.faint or UI.text
   ImGui.DrawList_AddRectFilled(dl, x, y, x + w, y + h, fill, 8)
-  ImGui.DrawList_AddRect(dl, x + 0.5, y + 0.5, x + w - 0.5, y + h - 0.5, outline, 8, 0, 1.5)
+  if on or hovered then
+    ImGui.DrawList_AddRect(dl, x - 3, y - 3, x + w + 3, y + h + 3, UI.text, 10, 0, 2)
+  end
   local tw, th = ImGui.CalcTextSize(ctx, label)
   local color = disabled and UI.faint or (on and UI.on_accent or UI.text)
   ImGui.DrawList_AddText(dl, x + math.floor((w - tw) / 2), y + math.floor((h - th) / 2), color, label)
@@ -967,9 +974,11 @@ local function draw_project(width, height, now)
   local path, tin, tout, loop = resolve(0)
   local image = is_image(path)
   ImGui.PushStyleVar(ctx, ImGui.StyleVar_FramePadding, 13, 5)
-  local ROW_H = ImGui.GetFrameHeight(ctx)   -- checkbox and slider height
-  -- An image has no timeline, so the preview takes its space.
-  local below = image and (8 + ROW_H) or (8 + TL_H + 8 + ROW_H)
+  local ROW_H = ImGui.GetFrameHeight(ctx)   -- slider row height
+  -- An image has no timeline or loop toggle, so the preview takes their space;
+  -- a video needs room under the row for the loop toggle's ring.
+  local ring = image and 0 or RING
+  local below = image and (8 + ROW_H) or (8 + TL_H + 8 + ROW_H + ring)
 
   local pv_h = math.min(math.floor(inner_w * 9 / 16), inner_h - below)
   local pv_w = math.min(inner_w, math.floor(pv_h * 16 / 9))
@@ -1027,10 +1036,10 @@ local function draw_project(width, height, now)
   -- rebuild the key table and repaint the arrange, so they apply on release.
   local loop_w = image and 0 or (ImGui.CalcTextSize(ctx, "loop") + 28)
   local gaps = image and 2 or 3
-  local third = math.floor((pv_w - loop_w - gaps * 8) / 3)
-  local gap = (pv_w - 3 * third - loop_w) / gaps
+  local third = math.floor((pv_w - loop_w - 2 * ring - gaps * 8) / 3)
+  local gap = (pv_w - 3 * third - loop_w - 2 * ring) / gaps
   local function rekey() if enabled then register_keys() end end
-  ImGui.SetCursorScreenPos(ctx, x, y + pv_h + below - ROW_H)
+  ImGui.SetCursorScreenPos(ctx, x, y + pv_h + below - ring - ROW_H)
   percent_slider("##opacity", "opacity", 0.6, "background %.0f%%", third, function(v) reaper.AUBG_SetOpacity(v) end)
   if ImGui.IsItemHovered(ctx) then tip("Background opacity over the track background colour") end
   ImGui.SameLine(ctx, 0, gap)
@@ -1040,7 +1049,7 @@ local function draw_project(width, height, now)
   percent_slider("##grid", "grid", 0.5, "grid %.0f%%", third, nil, rekey)
   if ImGui.IsItemHovered(ctx) then tip("Grid line opacity over the video") end
   if not image then
-    ImGui.SameLine(ctx, 0, gap)
+    ImGui.SameLine(ctx, 0, gap + RING)
     if toggle_button("##loop", "loop", loop, loop_w, not path) then proj_set("loop", loop and "" or "1") end
     if ImGui.IsItemHovered(ctx) then tip("Loop the video within its in/out range") end
   end
