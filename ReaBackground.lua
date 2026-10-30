@@ -1025,7 +1025,7 @@ local function draw_project(width, height, now)
   -- One row: the three sliders and, for a video, the Loop toggle.
   -- Opacity is a layer property, so it follows the drag live. Shading and grid
   -- rebuild the key table and repaint the arrange, so they apply on release.
-  local loop_w = image and 0 or (ImGui.CalcTextSize(ctx, "Loop") + 28)
+  local loop_w = image and 0 or (ImGui.CalcTextSize(ctx, "loop") + 28)
   local gaps = image and 2 or 3
   local third = math.floor((pv_w - loop_w - gaps * 8) / 3)
   local gap = (pv_w - 3 * third - loop_w) / gaps
@@ -1041,7 +1041,7 @@ local function draw_project(width, height, now)
   if ImGui.IsItemHovered(ctx) then tip("Grid line opacity over the video") end
   if not image then
     ImGui.SameLine(ctx, 0, gap)
-    if toggle_button("##loop", "Loop", loop, loop_w, not path) then proj_set("loop", loop and "" or "1") end
+    if toggle_button("##loop", "loop", loop, loop_w, not path) then proj_set("loop", loop and "" or "1") end
     if ImGui.IsItemHovered(ctx) then tip("Loop the video within its in/out range") end
   end
   ImGui.PopStyleVar(ctx)
