@@ -1133,7 +1133,7 @@ local function draw_window(now)
     font_s = ImGui.CreateFont("sans-serif", 12)
     ImGui.Attach(ctx, font)
     ImGui.Attach(ctx, font_s)
-    preview.path, preview.img = nil, nil
+    preview.path, preview.img, import.img = nil, nil, nil   -- attachments died with the old context
     refresh_library()
   end
   thumb_budget = 1
